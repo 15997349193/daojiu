@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>倒酒演示 —— 14两酒平分成两份（重心坐标版）</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    min-height:100vh;
+    background: radial-gradient(ellipse at 50% 20%, #2b3a67 0%, #1a2340 55%, #10162b 100%);
+    font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+    color:#fff; display:flex; flex-direction:column; align-items:center;
+    overflow-x:hidden; padding:12px; user-select:none;
+  }
+  h1 { font-size:clamp(20px,4vw,30px); margin:10px 0 4px; text-shadow:0 2px 8px rgba(0,0,0,.6); letter-spacing:2px; }
+  .subtitle { color:#ffd76e; font-size:clamp(13px,2.4vw,17px); margin-bottom:6px; text-align:center; }
+  .status {
+    min-height:34px; padding:6px 18px; border-radius:20px; margin:8px 0;
+    background:rgba(255,255,255,.1); font-size:clamp(13px,2.4vw,16px);
+    display:flex; align-items:center; gap:8px; transition:.3s; text-align:center;
+  }
+  .status.warn { background:rgba(255,60,60,.35); animation:shake .4s; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+
+  .stage {
+    position:relative; width:100%; max-width:860px; flex:1;
+    display:flex; align-items:flex-end; justify-content:space-around;
+    padding:10px 6px 150px;
+  }
+  .table-top {
+    position:absolute; left:0; right:0; bottom:110px; height:26px;
+    background:linear-gradient(#6b4a2b,#4a3220); border-radius:8px;
+    box-shadow:0 10px 30px rgba(0,0,0,.6);
+  }
+  .table-top::before{
+    content:""; position:absolute; left:0; right:0; top:-4px; bottom:0; border-radius:8px;
+    background:linear-gradient(rgba(255,255,255,.25), rgba(255,255,255,0) 45%);
+  }
+
+  /* ---------- 伪 3D 酒坛（按容量不同大小） ---------- */
+  .jar-wrap { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; cursor:pointer; transition:.25s; }
+  .jar-wrap.selected .jar { filter:brightness(1.25) drop-shadow(0 0 18px #ffd76e); }
+  .jar-wrap.selected::after {
+    content:"▲"; color:#ffd76e; font-size:20px; animation:bob .8s infinite alternate;
+    position:absolute; top:-28px;
+  }
+  @keyframes bob { from{transform:translateY(0)} to{transform:translateY(-6px)} }
+
+  .jar {
+    position:relative;
+    transform-origin:50% 55%;
+  }
+  .jar-body {
+    position:absolute; left:0; right:0; top:24px; bottom:0; overflow:hidden;
+    border-radius:16% 16% 36% 36% / 8% 8% 32% 32%;
+    background:
+      linear-gradient(105deg, rgba(255,255,255,.28) 4%, rgba(255,255,255,.05) 18%, rgba(0,0,0,0) 42%, rgba(0,0,0,.22) 78%, rgba(0,0,0,.38) 96%),
+      linear-gradient(180deg, #7f8ea3, #5c6b80);
+    box-shadow:
+      inset 0 6px 12px rgba(255,255,255,.25),
+      inset 0 -14px 22px rgba(0,0,0,.45),
+      0 16px 26px rgba(0,0,0,.5);
+  }
+  .jar-neck {
+    position:absolute; top:0; left:50%; transform:translateX(-50%);
+    width:46%; height:30px; z-index:3;
+    border-radius:10px 10px 4px 4px;
+    background:linear-gradient(105deg,#93a2b8,#5c6b80 60%,#46536a);
+    box-shadow:inset 0 3px 6px rgba(0,0,0,.5), 0 2px 4px rgba(0,0,0,.4);
+  }
+  .jar-neck::before{
+    content:""; position:absolute; top:-4px; left:-10%; right:-10%; height:12px;
+    border-radius:8px; background:linear-gradient(105deg,#a9b8cd,#64748c 65%,#4a5870);
+    box-shadow:0 3px 5px rgba(0,0,0,.4);
+  }
+  .liquid { position:absolute; left:0; right:0; bottom:0; height:0%; overflow:visible; }
+  .liquid .body {
+    position:absolute; left:0; right:0; top:0; bottom:0;
+    background:linear-gradient(180deg, #ffce54 0%, #f2a93b 30%, #c97b1e 85%, #a35f12 100%);
+  }
+  .liquid .wave {
+    position:absolute; top:-10px; left:-40px; width:200px; height:12px;
+    animation:waveMove 2.2s linear infinite;
+  }
+  /* 倒酒时液面剧烈翻滚 */
+  .liquid.agitate .wave { animation-duration:.7s; }
+  .liquid.agitate .surface { animation:surfaceShake .3s ease-in-out infinite alternate; }
+  @keyframes surfaceShake {
+    from{ transform:translateY(0) scaleX(1); }
+    to  { transform:translateY(2px) scaleX(.92); }
+  }
+  @keyframes waveMove { from{transform:translateX(0)} to{transform:translateX(-120px)} }
+  .liquid .surface {
+    position:absolute; top:-4px; left:8%; right:8%; height:5px;
+    border-radius:50%; background:rgba(255,240,190,.75); filter:blur(1px);
+  }
+  .jar-body::after {
+    content:""; position:absolute; top:6%; bottom:8%; left:9%; width:11%;
+    border-radius:10px; background:linear-gradient(rgba(255,255,255,.5),rgba(255,255,255,.06));
+    filter:blur(2px); z-index:4; pointer-events:none;
+  }
+  .jar-body::before {
+    content:""; position:absolute; top:10%; bottom:10%; right:10%; width:5%;
+    border-radius:8px; background:rgba(255,255,255,.12); filter:blur(1px); z-index:4;
+  }
+  /* 倒酒时手部轻微晃动（作用在内层包裹上，不干扰坛子的整体运动） */
+  .jar-inner { position:absolute; left:0; right:0; top:0; bottom:0; }
+  .jar-inner.wobble { animation:wobble .4s ease-in-out infinite alternate; }
+  @keyframes wobble {
+    from{ transform:rotate(-1.6deg) translateY(0); }
+    to  { transform:rotate(1.6deg) translateY(1px); }
+  }
+  .jar-amount {
+    margin-top:10px; font-size:17px; font-weight:bold; color:#ffd76e;
+    background:rgba(0,0,0,.35); padding:3px 14px; border-radius:14px;
+    text-shadow:0 1px 3px #000;
+  }
+  .jar-capacity { font-size:12px; color:#9fb0cc; margin-top:2px; }
+  .jar-shadow {
+    position:absolute; bottom:0; left:50%; transform:translateX(-50%);
+    width:70%; height:12px; border-radius:50%;
+    background:rgba(0,0,0,.45); filter:blur(4px); transition:.6s;
+  }
+
+  /* ---------- 倒酒时的酒滴 ---------- */
+  .drop {
+    position:absolute; z-index:12; width:8px; height:12px; pointer-events:none;
+    border-radius:50% 50% 60% 60%;
+    background:radial-gradient(circle at 35% 30%, #ffe9a8, #f2a93b 70%, #c97b1e);
+    box-shadow:0 0 6px rgba(255,200,80,.8);
+    opacity:0;
+  }
+  .drop.on { animation:dropFall .38s ease-in forwards; }
+  @keyframes dropFall {
+    0%   { transform:translate(0,0) scale(1);   opacity:1; }
+    85%  { transform:translate(var(--ex,0px), var(--ey,40px)) scale(.85); opacity:1; }
+    100% { transform:translate(var(--ex,0px), var(--ey,40px)) scale(.5); opacity:0; }
+  }
+
+  /* ---------- 按钮 ---------- */
+  .controls { display:flex; gap:14px; margin:4px 0 14px; flex-wrap:wrap; justify-content:center; z-index:5; }
+  button {
+    padding:10px 26px; font-size:16px; border:none; border-radius:24px; cursor:pointer;
+    font-family:inherit; color:#3a2408; font-weight:bold;
+    background:linear-gradient(#ffe08a,#f0b545);
+    box-shadow:0 4px 0 #b37f1e, 0 6px 12px rgba(0,0,0,.4);
+    transition:.15s;
+  }
+  button:active { transform:translateY(3px); box-shadow:0 1px 0 #b37f1e; }
+  button.ghost { background:linear-gradient(#7f8ea3,#5c6b80); color:#fff; box-shadow:0 4px 0 #33405a,0 6px 12px rgba(0,0,0,.4); }
+  .steps { color:#9fb0cc; font-size:13px; margin-bottom:6px; }
+
+  /* ---------- 重心坐标台球提示面板 ---------- */
+  .geo-panel {
+    display:none; width:100%; max-width:900px; margin:0 0 20px;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15);
+    border-radius:16px; padding:14px; backdrop-filter:blur(4px);
+  }
+  .geo-panel.show { display:block; }
+  .geo-panel h3 { text-align:center; color:#ffd76e; margin:4px 0 8px; font-size:17px; }
+  .geo-panel .geo-desc { color:#c6d2e8; font-size:13px; text-align:center; margin-bottom:8px; line-height:1.7; }
+  .geo-svg-wrap { text-align:center; width:100%; }
+  .geo-svg-wrap svg { display:block; width:min(100%, calc(72vh * 700 / 520)); height:auto; aspect-ratio:700/520;
+    margin:0 auto; background:rgba(0,0,0,.25); border-radius:12px; }
+  /* 分栏态：说明压成一行，把纵向空间都留给图形 */
+  body.geo-open .geo-desc { font-size:12px; line-height:1.5; margin-bottom:4px; text-align:center; }
+  body.geo-open .geo-desc br { display:none; }
+  body.geo-open .geo-desc b { white-space:nowrap; }
+  body.geo-open .geo-panel { padding:8px 12px; }
+  body.geo-open .geo-panel h3 { margin:2px 0 4px; font-size:16px; }
+  body.geo-open .geo-btns { margin-top:6px; }
+  body.geo-open .geo-log { max-height:96px; margin-top:6px; }
+
+  /* ---------- 板书画布层：叠在三角形上，支持触屏/鼠标手写 ---------- */
+  .draw-wrap { position:relative; display:block; width:100%; max-width:100%; }
+  .draw-wrap canvas {
+    position:absolute; left:0; top:0; width:100%; height:100%;
+    border-radius:12px; pointer-events:none; touch-action:none;
+  }
+  .draw-wrap.drawing canvas { pointer-events:auto; cursor:crosshair; }
+  .draw-hint {
+    position:absolute; right:10px; bottom:8px; font-size:12px; color:#9fb0cc;
+    background:rgba(0,0,0,.45); padding:3px 10px; border-radius:12px;
+    pointer-events:none; opacity:0; transition:.25s;
+  }
+  .draw-wrap.drawing .draw-hint { opacity:1; }
+  .draw-wrap.drawing { box-shadow:0 0 0 2px #ffd76e inset; border-radius:12px; }
+  .geo-log {
+    margin-top:10px; max-height:150px; overflow-y:auto; font-size:13px;
+    font-family:Consolas,monospace; color:#ffd76e; line-height:1.8;
+    background:rgba(0,0,0,.3); border-radius:10px; padding:8px 14px; text-align:left;
+  }
+  .geo-log .hit { color:#7CFC98; font-weight:bold; }
+  .geo-btns { display:flex; gap:12px; justify-content:center; margin-top:10px; flex-wrap:wrap; }
+
+  .win {
+    position:fixed; left:0; right:0; top:0; bottom:0; background:rgba(0,0,0,.55); z-index:50;
+    display:none; align-items:center; justify-content:center; flex-direction:column; gap:16px;
+  }
+  .win.show { display:flex; }
+  .win .card {
+    background:linear-gradient(#fff8e6,#ffe9b0); color:#7a4a10; padding:34px 46px;
+    border-radius:20px; text-align:center; font-size:22px; font-weight:bold;
+    box-shadow:0 20px 60px rgba(0,0,0,.7); animation:pop .5s cubic-bezier(.2,1.6,.4,1);
+  }
+  @keyframes pop { from{transform:scale(.4); opacity:0} to{transform:scale(1); opacity:1} }
+  .confetti { position:fixed; top:-20px; font-size:18px; z-index:60; animation:fall linear forwards; }
+  @keyframes fall { to{ transform:translateY(110vh) rotate(720deg); opacity:.7; } }
+
+  /* ---------- 主区域：提示打开时坛子居左、三角形居右；关闭时坛子恢复居中 ---------- */
+  .main-row { display:flex; flex-direction:column; align-items:center; width:100%; }
+  .left-col { display:flex; flex-direction:column; align-items:center; width:100%; }
+  body.geo-open .main-row {
+    flex-direction:row; align-items:flex-start; justify-content:space-between;
+    gap:16px; flex-wrap:nowrap; padding:0 20px;   /* 左右贴边，把空白用足 */
+  }
+  body.geo-open .left-col { width:350px; flex:0 0 350px; }
+  body.geo-open .stage { max-width:350px; }
+  body.geo-open .subtitle { font-size:14px; }
+  body.geo-open .status { font-size:13px; padding:5px 12px; }
+  body.geo-open .geo-panel { max-width:none; width:auto; flex:1 1 auto; }  /* 撑满右侧，三角形最大 */
+  body.geo-open .geo-desc { font-size:12px; line-height:1.6; margin-bottom:6px; }
+
+  /* 窄屏（手机/竖屏平板）：退回上下排列，避免挤成两半 */
+  @media (max-width:1180px){
+    body.geo-open .main-row { flex-wrap:wrap; }
+    body.geo-open .left-col { width:100%; flex:1 1 100%; }
+    body.geo-open .geo-panel { flex:1 1 100%; max-width:900px; }
+    body.geo-open .geo-desc { font-size:13px; line-height:1.7; }
+  }
+
+  @media (max-width:640px){
+    .stage { padding-bottom:130px; }
+    .table-top { bottom:95px; }
+    .jar-amount { font-size:14px; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="main-row">
+  <div class="left-col">
+  <h1>🍷 分酒演示（14两）</h1>
+  <div class="subtitle">大坛装满 14 两酒，另有两个空坛：能装 11 两、能装 5 两（均无刻度）。请把酒平分成两个 7 两！</div>
+  <div class="status" id="status">👆 先点一个坛子选出“倒酒方”，再点另一个坛子倒过去</div>
+
+  <div class="stage" id="stage">
+    <div class="table-top"></div>
+    <!-- 三个坛子由 JS 生成 -->
+  </div>
+
+  <div class="steps" id="steps">已倒 0 次</div>
+  <div class="controls">
+    <button class="ghost" onclick="resetGame()">🔄 重新开始</button>
+    <button onclick="toggleSound()" id="soundBtn">🔊 音效：开</button>
+    <button class="ghost" onclick="toggleGeo()">📐 重心坐标台球提示</button>
+  </div>
+  </div><!-- /left-col -->
+
+  <div class="geo-panel" id="geoPanel">
+    <h3>📐 重心坐标 · 台球碰撞法（通用解法）</h3>
+    <div class="geo-desc">
+      把三个坛子的酒量记为 <b>(a, b, c)</b> 坐标（a = 5两坛、b = 11两坛、c = 14两坛），
+      对应等边三角形内的<b>重心坐标</b>（点到三边成比例的距离）：<br>
+      <b style="color:#3b82f6">蓝色粗实线</b>是三角形的外边框，<b style="color:#5b8dd9">细蓝线</b>是坐标网格；<br>
+      <b style="color:#4cd97b">绿色边界</b>是坛子容量限制围成的"台球桌"，三条边依次为 a = 5、b = 11、c = 0；<br>
+      <b>🎯 靶心</b>是目标平分点 (0, 7, 7)。<br>
+      从起点 (0, 0, 14) 出发让台球沿坐标线做<b>弹性碰撞</b>，撞到目标点就得到解——这正是所有可能的倒酒方案！
+    </div>
+    <div class="geo-svg-wrap">
+      <div class="draw-wrap" id="drawWrap">
+        <svg id="geoSvg" viewBox="0 0 700 520" preserveAspectRatio="xMidYMid meet"></svg>
+        <canvas id="drawCanvas"></canvas>
+        <div class="draw-hint" id="drawHint">✍️ 可直接手写/画线（触屏或鼠标）</div>
+      </div>
+    </div>
+    <div class="geo-btns">
+      <button onclick="runBilliard()">▶ 演示台球碰撞</button>
+      <button class="ghost" onclick="toggleDraw()" id="drawBtn">✍️ 板书：关</button>
+      <button class="ghost" onclick="clearInk()">🧽 擦除笔迹</button>
+      <button class="ghost" onclick="clearBilliard()">🧹 清除轨迹</button>
+    </div>
+    <div class="geo-log" id="geoLog">点击「▶ 演示台球碰撞」，球会在每个碰撞点显示当前坐标 (a, b, c)。</div>
+  </div>
+  </div><!-- /main-row -->
+
+  <div class="win" id="win">
+    <div class="card">🎉 恭喜成功！<br><span style="font-size:16px">两个 7 两，平分完成！<br>共倒了 <span id="winSteps">0</span> 次</span></div>
+    <button onclick="resetGame()">再来一局</button>
+  </div>
+
+<script>
+/* ================= 数据 ================= */
+const JARS = [
+  { cap:14, amount:14, name:"大坛" },
+  { cap:11, amount:0,  name:"11两坛" },
+  { cap:5,  amount:0,  name:"5两坛" },
+];
+let selected = null, busy = false, steps = 0, soundOn = true;
+const stage = document.getElementById("stage");
+const statusEl = document.getElementById("status");
+
+/* ================= 声音（Web Audio 合成，无外部文件） ================= */
+let AC;
+function ac(){
+  if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==="suspended") AC.resume();
+  return AC;
+}
+let pourNode=null;
+
+/* 玻璃瓶共振：一小簇高频衰减正弦，模拟液体击打瓶壁的"叮"声 */
+function glassPing(ctx, when, freq, amp, decay){
+  const o=ctx.createOscillator(), g=ctx.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(freq, when);
+  // 轻微下滑，像玻璃余振
+  o.frequency.exponentialRampToValueAtTime(freq*0.94, when+decay);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(amp, when+0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, when+decay);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(when); o.stop(when+decay+0.02);
+}
+
+/* 气泡爆裂：极短的高频衰减噪声，模拟液体内气泡破裂的"咕"声 */
+function bubblePop(ctx, when, amp){
+  const len=Math.floor(ctx.sampleRate*0.035);
+  const buf=ctx.createBuffer(1,len,ctx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++){
+    const k=1-i/len;
+    d[i]=(Math.random()*2-1)*k*k;           // 快速衰减包络
+  }
+  const src=ctx.createBufferSource(); src.buffer=buf;
+  const bp=ctx.createBiquadFilter(); bp.type="bandpass";
+  bp.frequency.setValueAtTime(900+Math.random()*1500, when);
+  bp.Q.value=6;
+  const g=ctx.createGain(); g.gain.value=amp;
+  src.connect(bp); bp.connect(g); g.connect(ctx.destination);
+  src.start(when); src.stop(when+0.04);
+}
+
+/* 倒酒声：持续的气流细噪（很轻）+ 周期性玻璃撞击叮声 + 随机气泡 */
+function startPourSound(){
+  if(!soundOn) return; const ctx=ac();
+  const t0=ctx.currentTime;
+
+  // 1) 底层细流噪声：高通+带通，音量很低，只提供"流动"底噪
+  const len=Math.floor(ctx.sampleRate*2);
+  const buf=ctx.createBuffer(1,len,ctx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+  const src=ctx.createBufferSource(); src.buffer=buf; src.loop=true;
+  const hp=ctx.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=1200;
+  const bp=ctx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=2400; bp.Q.value=0.8;
+  const ng=ctx.createGain(); ng.gain.value=0;
+  ng.gain.linearRampToValueAtTime(0.045, t0+0.25);   // 明显轻于叮声
+  src.connect(hp); hp.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
+  src.start(t0);
+
+  // 2) 周期性"玻璃叮"与"气泡"：用 setInterval 排程，接近真实撞击的不规则节奏
+  const pings=[2100,2650,3150,1750,2380];
+  let tick=0;
+  const timer=setInterval(()=>{
+    if(!pourNode) return;
+    const now=ctx.currentTime;
+    // 主撞击声：高频清脆短促
+    const f=pings[Math.floor(Math.random()*pings.length)];
+    glassPing(ctx, now, f*(0.94+Math.random()*0.14), 0.10+Math.random()*0.05, 0.10+Math.random()*0.07);
+    // 偶发二次谐音，让质感更"玻璃"
+    if(Math.random()<0.55) glassPing(ctx, now+0.012, f*1.52, 0.05+Math.random()*0.03, 0.07);
+    // 低一点的空腔共鸣，像瓶内回声
+    if(tick%3===0) glassPing(ctx, now+0.004, 620+Math.random()*120, 0.05, 0.16);
+    // 气泡声
+    if(Math.random()<0.8) bubblePop(ctx, now+Math.random()*0.05, 0.05+Math.random()*0.04);
+    if(Math.random()<0.35) bubblePop(ctx, now+0.06+Math.random()*0.08, 0.03+Math.random()*0.03);
+    tick++;
+  }, 118);
+
+  pourNode={src,ng,timer};
+}
+function stopPourSound(){
+  if(!pourNode) return; const ctx=ac();
+  const p=pourNode; pourNode=null;
+  clearInterval(p.timer);
+  try{
+    p.ng.gain.cancelScheduledValues(ctx.currentTime);
+    p.ng.gain.setValueAtTime(p.ng.gain.value||0.045, ctx.currentTime);
+    p.ng.gain.linearRampToValueAtTime(0.0001, ctx.currentTime+0.25);
+  }catch(e){}
+  setTimeout(()=>{ try{p.src.stop();}catch(e){} },300);
+}
+
+/* 台球撞击声：木质/硬塑撞击的"啪"——短促宽频瞬态 + 低中频木质共鸣 */
+/* 与玻璃叮声明显区分：频率更低、衰减更快、有明显"击打"冲击感 */
+function ballHitSound(strength){
+  if(!soundOn) return; const ctx=ac();
+  const t=ctx.currentTime;
+  const s=strength||1;
+
+  // 1) 冲击瞬态：极短噪声，带通落在 700Hz 左右（木质"啪"的击打点）
+  const len=Math.floor(ctx.sampleRate*0.028);
+  const buf=ctx.createBuffer(1,len,ctx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++){
+    const k=1-i/len;
+    d[i]=(Math.random()*2-1)*Math.pow(k,3);      // 极快衰减
+  }
+  const src=ctx.createBufferSource(); src.buffer=buf;
+  const bp=ctx.createBiquadFilter(); bp.type="bandpass";
+  bp.frequency.value=760; bp.Q.value=1.6;
+  const g=ctx.createGain(); g.gain.value=0.30*s;
+  src.connect(bp); bp.connect(g); g.connect(ctx.destination);
+  src.start(t); src.stop(t+0.03);
+
+  // 2) 木质共鸣：两个低频衰减正弦，短促、沉稳
+  [[430,0.22*s,0.075],[720,0.13*s,0.055]].forEach(([f,a,dec],i)=>{
+    const o=ctx.createOscillator(), gg=ctx.createGain();
+    o.type="triangle";
+    o.frequency.setValueAtTime(f, t+i*0.002);
+    o.frequency.exponentialRampToValueAtTime(f*0.82, t+dec);
+    gg.gain.setValueAtTime(0.0001, t+i*0.002);
+    gg.gain.exponentialRampToValueAtTime(a, t+i*0.002+0.004);
+    gg.gain.exponentialRampToValueAtTime(0.0001, t+i*0.002+dec);
+    o.connect(gg); gg.connect(ctx.destination);
+    o.start(t+i*0.002); o.stop(t+i*0.002+dec+0.01);
+  });
+}
+function alarm(){
+  if(!soundOn) return; const ctx=ac();
+  for(let i=0;i<3;i++){
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type="square"; o.frequency.value= i%2? 660:440;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime+i*0.16);
+    g.gain.linearRampToValueAtTime(0.22, ctx.currentTime+i*0.16+0.02);
+    g.gain.linearRampToValueAtTime(0.0001, ctx.currentTime+i*0.16+0.14);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(ctx.currentTime+i*0.16); o.stop(ctx.currentTime+i*0.16+0.16);
+  }
+}
+function ding(){
+  if(!soundOn) return; const ctx=ac();
+  [523,659,784,1047].forEach((f,i)=>{
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type="triangle"; o.frequency.value=f;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime+i*0.13);
+    g.gain.linearRampToValueAtTime(0.25, ctx.currentTime+i*0.13+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+i*0.13+0.6);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(ctx.currentTime+i*0.13); o.stop(ctx.currentTime+i*0.13+0.65);
+  });
+}
+function clickSound(){
+  if(!soundOn) return; const ctx=ac();
+  const o=ctx.createOscillator(), g=ctx.createGain();
+  o.frequency.value=880; o.type="sine";
+  g.gain.setValueAtTime(0.12,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.1);
+  o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime+0.12);
+}
+function toggleSound(){
+  soundOn=!soundOn;
+  document.getElementById("soundBtn").textContent = soundOn? "🔊 音效：开":"🔇 音效：关";
+  if(!soundOn) stopPourSound();
+}
+
+/* ================= 渲染（坛子按容量定大小，无标签贴纸） ================= */
+const SIZE = { 14:{w:130,h:210}, 11:{w:104,h:168}, 5:{w:66,h:112} };
+function buildJars(){
+  JARS.forEach((j,i)=>{
+    const s = SIZE[j.cap];
+    const w=document.createElement("div");
+    w.className="jar-wrap"; w.id="wrap"+i;
+    w.onclick=()=>onTap(i);
+    w.innerHTML=`
+      <div class="jar" id="jar${i}" style="width:${s.w}px;height:${s.h}px">
+        <div class="jar-inner" id="inner${i}">
+          <div class="jar-neck"></div>
+          <div class="jar-body">
+            <div class="liquid" id="liq${i}">
+              <div class="body"></div>
+              <svg class="wave" viewBox="0 0 120 12" preserveAspectRatio="none">
+                <path d="M0 8 Q10 0 20 8 T40 8 T60 8 T80 8 T100 8 T120 8 V12 H0 Z" fill="#ffce54"/>
+              </svg>
+              <div class="surface"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="jar-shadow" id="shadow${i}" style="width:${s.w*0.8}px"></div>
+      <div class="jar-amount" id="amt${i}">${j.amount} / ${j.cap} 两</div>
+      <div class="jar-capacity">${j.name}</div>`;
+    stage.appendChild(w);
+  });
+  render();
+}
+function render(){
+  JARS.forEach((j,i)=>{
+    const liq=document.getElementById("liq"+i);
+    liq.style.height = (j.amount/j.cap*100)+"%";
+    liq.style.opacity = j.amount>0?1:0;
+    document.getElementById("amt"+i).textContent = j.amount+" / "+j.cap+" 两";
+    document.getElementById("wrap"+i).classList.toggle("selected", selected===i);
+  });
+  document.getElementById("steps").textContent = `已倒 ${steps} 次`;
+}
+function setStatus(msg, warn=false){
+  statusEl.innerHTML = msg;
+  statusEl.classList.toggle("warn", warn);
+  if(warn) setTimeout(()=>statusEl.classList.remove("warn"), 500);
+}
+
+/* ================= 交互 ================= */
+function onTap(i){
+  if(busy) return;
+  const j=JARS[i];
+  if(selected===null){
+    if(j.amount===0){
+      alarm(); setStatus("⚠️ 这个坛子已经空了，倒不出酒！请选有酒的坛子", true);
+      return;
+    }
+    selected=i; clickSound();
+    setStatus(`已选中【${j.name}】（${j.amount}两）—— 再点另一个坛子把它拿起来倒过去`);
+    render(); return;
+  }
+  if(selected===i){ selected=null; render(); setStatus("已取消选择"); return; }
+
+  const from=JARS[selected], to=j;
+  if(to.amount>=to.cap){
+    alarm();
+    setStatus(`⚠️ 【${to.name}】已经满了（${to.cap}两），倒不进去啦！`, true);
+    return;
+  }
+  if(from.amount===0){
+    alarm();
+    setStatus(`⚠️ 【${from.name}】已经空了，倒不出酒！`, true);
+    selected=null; render(); return;
+  }
+  doPour(selected, i);
+}
+
+/* ================= 倒酒动画：一条连续丝滑的时间线 ================= */
+function wrapInfo(i){
+  const s=stage.getBoundingClientRect();
+  const wr=document.getElementById("wrap"+i).getBoundingClientRect();
+  const jr=document.getElementById("jar"+i).getBoundingClientRect();
+  return {
+    cx: wr.left - s.left + wr.width/2,
+    top: jr.top - s.top,
+    h: SIZE[JARS[i].cap].h,
+    w: SIZE[JARS[i].cap].w,
+  };
+}
+function spawnDrop(x, y, tx, ty){
+  const d=document.createElement("div");
+  d.className="drop on";
+  d.style.left=(x-4)+"px"; d.style.top=y+"px";
+  d.style.setProperty("--ex", (tx-x)+"px");
+  d.style.setProperty("--ey", (ty-y)+"px");
+  stage.appendChild(d);
+  setTimeout(()=>d.remove(), 420);
+}
+function doPour(fi, ti){
+  busy=true; selected=null; render();
+  const from=JARS[fi], to=JARS[ti];
+  const amount=Math.min(from.amount, to.cap-to.amount);
+  const jarEl=document.getElementById("jar"+fi);
+  const shadowEl=document.getElementById("shadow"+fi);
+  const startAmt=from.amount, startTo=to.amount;
+  const A=wrapInfo(fi), B=wrapInfo(ti);
+  const dir = B.cx >= A.cx ? 1 : -1;
+  const tilt = dir * 122;
+  const th = tilt*Math.PI/180;
+  const halfH = A.h/2;
+  const mOffX = halfH * Math.sin(th);
+  const mOffY = -halfH * Math.cos(th);
+  const gap = 26;
+  const mouthX = B.cx + dir*4;
+  const mouthY = B.top - gap;
+  const tx = mouthX - mOffX - A.cx;
+  const ty = mouthY - mOffY - (A.top + halfH);
+
+  /* ---- 一条完整时间线（Web Animations API，各关键帧之间平滑插值） ---- */
+  // 时间轴（ms）：
+  //  0-500     缓缓拿起（先起后移，带一点“蓄力下压再上抬”）
+  //  500-1450  划一道弧线飘到目标坛口上方（x、y 同时缓动）
+  //  1450-2050 边移动边渐渐翻转到位（翻转与移动尾部重叠，不生硬）
+  //  2050-3550 保持倾斜倒酒（液面渐变 + 酒滴）
+  //  3550-4050 渐渐翻回
+  //  4050-5100 飘回原位放下（先落后稳）
+  const DUR = 5100;
+  const kf = [
+    { transform:"translate(0px,0px) rotate(0deg)", offset:0,
+      easing:"cubic-bezier(.35,0,.25,1)" },
+    // 蓄力：轻微上抬
+    { transform:"translate(0px,-14px) rotate(0deg)", offset:0.06,
+      easing:"cubic-bezier(.4,0,.3,1)" },
+    // 弧线中段：升高一半、横移一半，稍微向目标方向偏转一点点（像被拎起来的感觉）
+    { transform:`translate(${tx*0.45}px, ${ty*0.62-70}px) rotate(${dir*8}deg)`, offset:0.20,
+      easing:"cubic-bezier(.45,0,.3,1)" },
+    // 到达目标口上方（未翻转）
+    { transform:`translate(${tx}px, ${ty}px) rotate(${dir*14}deg)`, offset:0.30,
+      easing:"cubic-bezier(.45,0,.35,1)" },
+    // 渐进翻转到位
+    { transform:`translate(${tx}px, ${ty}px) rotate(${tilt}deg)`, offset:0.42,
+      easing:"cubic-bezier(.4,0,.35,1)" },
+    // 倒酒保持（结束前微微回正一点点，像倒到最后一滴）
+    { transform:`translate(${tx}px, ${ty-4}px) rotate(${tilt*0.97}deg)`, offset:0.66,
+      easing:"cubic-bezier(.4,0,.4,1)" },
+    { transform:`translate(${tx}px, ${ty}px) rotate(${tilt}deg)`, offset:0.70,
+      easing:"cubic-bezier(.4,0,.4,1)" },
+    // 翻回
+    { transform:`translate(${tx}px, ${ty}px) rotate(${dir*10}deg)`, offset:0.78,
+      easing:"cubic-bezier(.45,0,.3,1)" },
+    // 飘回：先回横移大部分、还在空中
+    { transform:`translate(${tx*0.4}px, -70px) rotate(0deg)`, offset:0.90,
+      easing:"cubic-bezier(.35,0,.25,1)" },
+    // 落地轻轻一沉再回正（落地缓冲）
+    { transform:"translate(0px,3px) rotate(0deg)", offset:0.975,
+      easing:"cubic-bezier(.3,0,.3,1)" },
+    { transform:"translate(0px,0px) rotate(0deg)", offset:1 },
+  ];
+  const anim = jarEl.animate(kf, { duration:DUR, fill:"both" });
+
+  // 阴影：拿起时缩小变淡，倒酒期间随坛子位置轻摆，放下恢复
+  shadowEl.style.width=Math.max(22,A.w*0.42)+"px";
+  shadowEl.style.opacity="0.18";
+  setStatus(`把【${from.name}】拿起来，飘向【${to.name}】… 🍶`);
+  setTimeout(()=>setStatus(`口对口，正在往【${to.name}】里倒酒… 🍶`), 2000);
+  setTimeout(()=>setStatus(`倒好了，把【${from.name}】放回原位… 🍶`), 3700);
+
+  // 倒酒阶段（与时间线翻转保持段对齐，液面全程渐进变化）
+  const pourStart = DUR*0.43, pourEnd = DUR*0.72;
+  const liqFrom=document.getElementById("liq"+fi), liqTo=document.getElementById("liq"+ti);
+  const innerEl=document.getElementById("inner"+fi);
+
+  setTimeout(()=>startPourSound(), pourStart-150);
+  setTimeout(()=>{
+    liqTo.classList.add("agitate");   // 目标坛液面翻滚
+    innerEl.classList.add("wobble");  // 倒酒的手微微晃动
+    const t0=performance.now(), dur=pourEnd-pourStart;
+    let lastDrop=0;
+    (function anim(t){
+      const k=Math.min(1,(t-t0) /dur );
+      // “咕咚咕咚”式流动：整体渐进 + 轻微的间歇波动（越到后面越平稳）
+      const glug = 0.045*Math.sin(k*Math.PI*7)*(1-k*0.6);
+      const kk = Math.max(0, Math.min(1, k + glug));
+      const ease = kk<0.5 ? 2*kk*kk : 1-Math.pow(-2*kk+2,2) /2 ;
+      from.amount=startAmt-amount*ease;
+      to.amount=startTo+amount*ease;
+      liqFrom.style.height=(from.amount/from.cap*100)+"%";
+      liqTo.style.height=(to.amount/to.cap*100)+"%";
+      // 关键：此前空瓶的液面 opacity 为 0，倒酒时必须同步恢复可见，
+      // 否则目标瓶液面虽在升高却完全透明，看起来像“没有上涨”
+      liqFrom.style.opacity = from.amount>0.01 ? 1 : 0;
+      liqTo.style.opacity   = to.amount>0.01 ? 1 : 0;
+      document.getElementById("amt"+fi).textContent=Math.round(from.amount)+" / "+from.cap+" 两";
+      document.getElementById("amt"+ti).textContent=Math.round(to.amount)+" / "+to.cap+" 两";
+      if(t-lastDrop>105){ // 酒滴：从源坛口落入目标坛口
+        lastDrop=t;
+        spawnDrop(mouthX+(Math.random()*8-4)*dir, mouthY-6, mouthX, B.top+10);
+      }
+      if(k<1) requestAnimationFrame(anim);
+      else {
+        // 收尾：精确对齐最终值（含可见性，避免与 render() 的 opacity 规则冲突而闪烁）
+        liqFrom.style.height=((startAmt-amount)/from.cap*100)+"%";
+        liqTo.style.height=((startTo+amount)/to.cap*100)+"%";
+        liqFrom.style.opacity = (startAmt-amount)>0.01 ? 1 : 0;
+        liqTo.style.opacity   = (startTo+amount)>0.01 ? 1 : 0;
+      }
+    })(t0);
+  }, pourStart);
+  setTimeout(()=>{
+    stopPourSound();
+    liqTo.classList.remove("agitate");
+    innerEl.classList.remove("wobble");
+  }, pourEnd+150);
+  // 放下时阴影恢复
+  setTimeout(()=>{
+    shadowEl.style.width=A.w*0.8+"px";
+    shadowEl.style.opacity="1";
+  }, DUR*0.88);
+
+  anim.onfinish=()=>{
+    from.amount=Math.round(startAmt-amount);
+    to.amount=Math.round(startTo+amount);
+    steps++;
+    render(); busy=false;
+    setStatus(`✅ 倒了 ${amount} 两。当前状态：${JARS.map(j=>j.amount).join(" / ")} 两`);
+    checkWin();
+  };
+}
+
+/* ================= 胜利 / 重置 / 提示 ================= */
+function checkWin(){
+  const twenties = JARS.filter(j=>j.amount===7).length;
+  if(twenties>=2){
+    ding(); setStatus("🎉 太棒了！酒被平分成两个 7 两啦！");
+    document.getElementById("winSteps").textContent=steps;
+    setTimeout(()=>document.getElementById("win").classList.add("show"), 400);
+    for(let i=0;i<40;i++) setTimeout(()=>{
+      const c=document.createElement("div"); c.className="confetti";
+      c.textContent=["🎊","🎉","✨","🍷"][i%4];
+      c.style.left=Math.random()*100+"vw";
+      c.style.animationDuration=(2+Math.random()*2)+"s";
+      document.body.appendChild(c);
+      setTimeout(()=>c.remove(),4500);
+    }, i*90);
+  }
+}
+function resetGame(){
+  JARS[0].amount=14; JARS[1].amount=0; JARS[2].amount=0;
+  selected=null; steps=0; busy=false;
+  document.getElementById("win").classList.remove("show");
+  document.querySelectorAll(".jar").forEach(j=>{ j.getAnimations().forEach(a=>a.cancel()); });
+  document.querySelectorAll(".jar-shadow").forEach(s=>{ s.style.opacity="1"; s.style.width=""; });
+  setStatus("👆 先点一个坛子选出“倒酒方”，再点另一个坛子倒过去");
+  render();
+}
+
+/* ================= 重心坐标台球提示（通用解法可视化） ================= */
+const GEO = (function(){
+  const TOTAL = 14;                    // 大坛容量 = 坐标总和
+  const TARGET = 7;                    // 平分目标：两个 7
+  const S = 392;                       // 三角形边长（14格较疏，可取较大边长）
+  const T = { x:350, y:44 };           // 顶点  = (0,0,40)
+  const L = { x:350 - S*Math.sqrt(3)/2, y:44 + S }; // 左下 = (0,40,0)
+  const R = { x:350 + S*Math.sqrt(3)/2, y:44 + S }; // 右下 = (40,0,0)
+  // 状态 (a,b,c) → 笛卡尔坐标（重心插值）：a=5两坛、b=11两坛、c=14两坛
+  function toXY(p){
+    return {
+      x: (p[0]*R.x + p[1]*L.x + p[2]*T.x)/TOTAL,
+      y: (p[0]*R.y + p[1]*L.y + p[2]*T.y)/TOTAL,
+    };
+  }
+  // 模拟台球轨迹（反射公式 v' = 2(v·d)/|d|² d − v）
+  function simulate(dir0){
+    const WALLS = [[0,0],[5,0],[0,1],[11,1],[0,2]]; // [墙值, 坐标轴] (x14=14 只在起点)
+    let s=[0,0,TOTAL], d=dir0, pts=[[...s]];
+    for(let step=0; step<300; step++){
+      let best=null;
+      for(const [w,ax] of WALLS){
+        const ds=d[ax]; if(ds===0) continue;
+        const t=(w-s[ax])/ds;
+        if(t<=1e-9) continue;
+        if(!best||t<best.t) best={t,ax};
+      }
+      if(!best) break;
+      const np=s.map((v,i)=>v+d[i]*best.t).map(Math.round);
+      pts.push(np);
+      const wi=[0,1,2].filter(i=>i!==best.ax);
+      const wd=[0,0,0]; wd[wi[0]]=1; wd[wi[1]]=-1;
+      const dot=d[0]*wd[0]+d[1]*wd[1]+d[2]*wd[2]; // |wd|²=2
+      d=d.map((v,i)=>2*dot*wd[i]/2 - v);
+      if(np.filter(v=>v===TARGET).length>=2) return { pts, target:np };
+      s=np;
+    }
+    return { pts, target:null };
+  }
+  return { T, L, R, toXY, simulate, S, TOTAL, TARGET };
+})();
+
+function toggleGeo(){
+  const p=document.getElementById("geoPanel");
+  p.classList.toggle("show");
+  const open=p.classList.contains("show");
+  // 布局切换：提示打开 → 坛子居左、三角形居右；关闭 → 恢复居中
+  document.body.classList.toggle("geo-open", open);
+  if(open){
+    if(!p.dataset.built) buildGeoSvg();
+    // 面板展开后布局才有尺寸，此时再校正画板大小
+    setTimeout(()=>{ if(window.INK) INK.resize(); }, 30);
+  }
+}
+function buildGeoSvg(){
+  const svg=document.getElementById("geoSvg");
+  const NS="http://www.w3.org/2000/svg";
+  let html="";
+
+  // 1) 三角形的三条外边框：蓝粗实线
+  html+=`<polygon points="${[GEO.T,GEO.R,GEO.L].map(p=>p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ")}"
+           fill="rgba(120,170,255,0.05)" stroke="#3b82f6" stroke-width="5" stroke-linejoin="round"/>`;
+
+  // 2) 蓝色坐标网格：每个坐标 = 1..39 的三族平行线（细线，弱于边框；40 格较密故更淡）
+  for(let k=1;k<=13;k++){
+    const tri=(a,b,c)=>GEO.toXY([a,b,c]);
+    const lines=[
+      [tri(k,0,14-k), tri(k,14-k,0)],   // a = k
+      [tri(0,k,14-k), tri(14-k,k,0)],   // b = k
+      [tri(0,14-k,k), tri(14-k,0,k)],   // c = k
+    ];
+    lines.forEach(([a,b])=>{
+      html+=`<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="#5b8dd9" stroke-width="0.7" opacity="0.5"/>`;
+    });
+  }
+
+  // 3) 绿线边界（台球桌）：五边形，各边标注容量 a=5 / b=11 / c=0
+  const poly=[[0,0,14],[5,0,9],[5,9,0],[3,11,0],[0,11,3]].map(p=>GEO.toXY(p));
+  html+=`<polygon points="${poly.map(p=>p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ")}"
+           fill="rgba(80,200,120,0.10)" stroke="#4cd97b" stroke-width="3" stroke-linejoin="round"/>`;
+  // 法向量朝内的偏移，把标签写在边界线内侧；加深色描边保证压线也清晰
+  function edgeLabel(aIdx, bIdx, text, off){
+    const A=poly[aIdx], B=poly[bIdx];
+    const mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
+    const cx=(GEO.T.x+GEO.L.x+GEO.R.x)/3, cy=(GEO.T.y+GEO.L.y+GEO.R.y)/3;
+    let vx=cx-mx, vy=cy-my;
+    const len=Math.hypot(vx,vy)||1; vx/=len; vy/=len;
+    html+=`<text x="${(mx+vx*off).toFixed(1)}" y="${(my+vy*off).toFixed(1)}" fill="#7ef2a2"
+             stroke="#0b1220" stroke-width="3.5" paint-order="stroke" stroke-linejoin="round"
+             font-size="14" font-weight="bold" text-anchor="middle" dominant-baseline="middle">${text}</text>`;
+  }
+  edgeLabel(1,2,"a = 5", 16);   // 最右侧绿边：5两坛的容量界（x_a = 5）
+  edgeLabel(3,4,"b = 11", 16);  // 左下侧绿边：11两坛的容量界（x_b = 11）
+  edgeLabel(2,3,"c = 0", 16);   // 底边：大坛酒量为 0（x_c = 0）
+
+  // 4) 顶点只标数值，不加任何多余符号（底部两点内移，避免被画布裁剪）
+  const labels=[
+    { p:GEO.T, t:"(0, 0, 14)  起点", dy:-14, dx:0,   anchor:"middle", color:"#ffffff" },
+    { p:GEO.L, t:"(0, 14, 0)",      dy:-14, dx:62,  anchor:"middle", color:"#cfe0ff" },
+    { p:GEO.R, t:"(14, 0, 0)",      dy:-14, dx:-62, anchor:"middle", color:"#cfe0ff" },
+  ];
+  labels.forEach(l=>{
+    html+=`<text x="${(l.p.x+(l.dx||0)).toFixed(1)}" y="${(l.p.y+(l.dy||0)).toFixed(1)}" fill="${l.color}"
+             font-size="13" text-anchor="${l.anchor}">${l.t}</text>`;
+  });
+
+  // 5) 目标点 (a,b,c) = (0,20,20)：靶心图标 + 文字（不用红点）
+  const tp=GEO.toXY([0,7,7]);
+  html+=`<text x="${tp.x.toFixed(1)}" y="${(tp.y+7).toFixed(1)}" font-size="24" text-anchor="middle">🎯</text>`;
+  html+=`<text x="${(tp.x+18).toFixed(1)}" y="${(tp.y+6).toFixed(1)}" fill="#ff6b6b"
+           font-size="14" font-weight="bold">目标 (0, 7, 7)</text>`;
+
+  html+=`<circle id="geoBall" r="7" fill="#ff5252" stroke="#fff" stroke-width="2" opacity="0"/>`;
+  html+=`<g id="geoTrail"></g><g id="geoMarks"></g>`;
+  svg.innerHTML=html;
+  document.getElementById("geoPanel").dataset.built="1";
+}
+let geoAnim=null;
+function clearBilliard(){
+  if(geoAnim) cancelAnimationFrame(geoAnim);
+  geoAnim=null;
+  if(!document.getElementById("geoPanel").dataset.built) return;
+  document.getElementById("geoTrail").innerHTML="";
+  document.getElementById("geoMarks").innerHTML="";
+  document.getElementById("geoBall").setAttribute("opacity","0");
+  const log=document.getElementById("geoLog");
+  log.innerHTML=`点击「▶ 演示台球碰撞」，球会在每个碰撞点显示当前坐标 (a, b, c)。`;
+}
+function runBilliard(){
+  clearBilliard();
+  const { pts, target } = GEO.simulate([0,1,-1]);
+  const xy = pts.map(GEO.toXY);
+  const trail=document.getElementById("geoTrail");
+  const marks=document.getElementById("geoMarks");
+  const ball=document.getElementById("geoBall");
+  const log=document.getElementById("geoLog");
+  ball.setAttribute("opacity","1");
+  const NS="http://www.w3.org/2000/svg";
+  let seg=0, t0=performance.now();
+  const SEG_MS=900;
+  function addMark(i, hit){
+    const p=xy[i], st=pts[i];
+    if(hit){   // 命中目标点：画绿色大点（靶心已常驻显示，不再重复写坐标）
+      const c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",p.x); c.setAttribute("cy",p.y); c.setAttribute("r",7);
+      c.setAttribute("fill","none");
+      c.setAttribute("stroke","#7CFC98"); c.setAttribute("stroke-width","3");
+      marks.appendChild(c);
+    } else if(i>0){   // 中间碰撞点：小圆点 + 坐标；起点(i=0)不标，避免与"起点"文字重复
+      const c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",p.x); c.setAttribute("cy",p.y); c.setAttribute("r",4);
+      c.setAttribute("fill","#ffd76e");
+      marks.appendChild(c);
+      const tx=document.createElementNS(NS,"text");
+      tx.setAttribute("x",p.x); tx.setAttribute("y",p.y-10);
+      tx.setAttribute("fill","#ffe9a8");
+      tx.setAttribute("font-size","12"); tx.setAttribute("text-anchor","middle");
+      tx.textContent=`(${st.join(",")})`;
+      marks.appendChild(tx);
+    }
+    const line=document.createElement("div");
+    if(hit) line.className="hit";
+    line.textContent = i===0
+      ? `起点 (${st.join(",")}) —— 台球出发`
+      : `第 ${i} 个碰撞点：(${st.join(",")})${hit?"　🎯 平分点，问题得解！":""}`;
+    log.appendChild(line);
+    log.scrollTop=log.scrollHeight;
+  }
+  addMark(0,false);
+  function frame(t){
+    const k=Math.min(1,(t-t0)/SEG_MS);
+    const a=xy[seg], b=xy[seg+1];
+    const x=a.x+(b.x-a.x)*k, y=a.y+(b.y-a.y)*k;
+    ball.setAttribute("cx",x); ball.setAttribute("cy",y);
+    if(k>=1){
+      const hit = pts[seg+1].filter(v=>v===GEO.TARGET).length>=2;
+      const ln=document.createElementNS(NS,"line");
+      ln.setAttribute("x1",a.x); ln.setAttribute("y1",a.y);
+      ln.setAttribute("x2",b.x); ln.setAttribute("y2",b.y);
+      ln.setAttribute("stroke", hit? "#7CFC98" : "#ff5252");
+      ln.setAttribute("stroke-width","2.5");
+      trail.appendChild(ln);
+      addMark(seg+1, hit);
+      // 撞击音效：每次撞到边界都有"啪"的一声；命中目标点更响亮、更重
+      ballHitSound(hit ? 1.35 : 0.85 + Math.random()*0.25);
+      // 撞击瞬间球体放大回弹，强化"掷地有声"的视觉反馈
+      ball.setAttribute("r","10");
+      setTimeout(()=>ball.setAttribute("r","7"), 110);
+      if(hit || seg+1>=pts.length-1){
+        setStatus(`📐 台球法解出：${pts[seg+1].join(", ")} —— 共 ${pts.length-1} 步碰撞到达平分点`);
+        return;
+      }
+      seg++; t0=performance.now();
+    }
+    geoAnim=requestAnimationFrame(frame);
+  }
+  geoAnim=requestAnimationFrame(frame);
+}
+
+/* ================= 板书画布：三角形区域内手写/画线（触屏 + 鼠标） ================= */
+const INK = {
+  on:false,
+  canvas:null, ctx:null,
+  drawing:false, last:null,
+  dpr:1,
+  init(){
+    this.canvas = document.getElementById("drawCanvas");
+    window.addEventListener("resize", ()=>{ if(this.on) this.resize(); });
+    const c=this.canvas;
+    const down=e=>{
+      if(!this.on) return;
+      e.preventDefault();
+      if(!this.ctx) this.resize();
+      if(!this.ctx) return;
+      this.drawing=true;
+      this.last=this.pos(e);
+      if(this.last) this.stroke(this.last, this.last, 1);
+    };
+    const move=e=>{
+      if(!this.on || !this.drawing) return;
+      e.preventDefault();
+      const p=this.pos(e);
+      if(p && this.last) this.stroke(this.last, p, 1);
+      this.last=p;
+    };
+    const up=()=>{ this.drawing=false; this.last=null; };
+    c.addEventListener("mousedown",down);
+    c.addEventListener("mousemove",move);
+    window.addEventListener("mouseup",up);
+    c.addEventListener("touchstart",down,{passive:false});
+    c.addEventListener("touchmove",move,{passive:false});
+    c.addEventListener("touchend",up);
+    c.addEventListener("touchcancel",up);
+  },
+  resize(){
+    const wrap=document.getElementById("drawWrap");
+    const r=wrap.getBoundingClientRect();
+    if(r.width<1 || r.height<1){ this.ctx=null; return; }   // 面板未展开
+    const dpr=window.devicePixelRatio||1;
+    this.dpr=dpr;
+    this.canvas.width=Math.round(r.width*dpr);
+    this.canvas.height=Math.round(r.height*dpr);
+    const ctx=this.canvas.getContext("2d");
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.lineCap="round";
+    ctx.lineJoin="round";
+    ctx.strokeStyle="#ffe14d";
+    ctx.shadowColor="rgba(255,225,77,.9)";
+    ctx.shadowBlur=6;
+    this.ctx=ctx;
+  },
+  pos(e){
+    const r=this.canvas.getBoundingClientRect();
+    if(r.width<1) return null;
+    const t = (e.touches && e.touches.length) ? e.touches[0] : e;
+    return { x:(t.clientX-r.left), y:(t.clientY-r.top) };
+  },
+  stroke(a,b,w){
+    if(!a||!b||!this.ctx) return;
+    const ctx=this.ctx;
+    ctx.lineWidth = w>=1 ? 3 : 1;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  },
+  toggle(force){
+    const wrap=document.getElementById("drawWrap");
+    this.on = (force===undefined) ? !this.on : force;
+    wrap.classList.toggle("drawing", this.on);
+    document.getElementById("drawBtn").textContent = this.on ? "✍️ 板书：开" : "✍️ 板书：关";
+    if(this.on) this.resize();     // 开启时按当前实际尺寸初始化画布
+    else { this.drawing=false; this.ctx=this.ctx; }
+  },
+  clear(){
+    if(!this.ctx) this.resize();
+    if(this.ctx) this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+  }
+};
+function toggleDraw(){ INK.toggle(); }
+function clearInk(){ INK.clear(); }
+
+buildJars();
+INK.init();
+document.addEventListener("touchstart", ()=>ac(), {once:true});
+</script>
+</body>
+</html>
